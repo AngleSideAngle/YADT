@@ -21,7 +21,6 @@ RUN nix copy --to /tmp/closure $(cat built_pkg_dirs)
 
 # Fill profile directory with simlinks to every binary of everyone package that
 # were specified to be installed
-RUN ls /nix/store/bialkx47yxyj6ar2zyihghip6nyxcwhm-bash-5.2p37-man/share
 RUN mkdir /tmp/profile
 RUN for package in $(cat built_pkg_dirs); do \
       bin_dir="$(readlink $package)/bin"; \
