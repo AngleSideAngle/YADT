@@ -1,9 +1,10 @@
 # Uses nix image to build user defined packages and then install them into the
 # specified base image
-FROM nixos/nix:latest AS builder
+ARG NIX_IMAGE
+FROM $NIX_IMAGE AS builder
 
 # Formatted as "nixpkgs#package1 nixpkgs#package2 etc"
-ARG PACKAGES_STRING="nixpkgs#python314 nixpkgs#helix nixpkgs#bash"
+ARG PACKAGES_STRING
 
 # The new nix cli doesn't work without this
 RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf

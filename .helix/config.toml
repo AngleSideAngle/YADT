@@ -1,0 +1,21 @@
+theme = "onedark"
+
+[editor]
+bufferline = "multiple"
+idle-timeout = 5
+completion-timeout = 5
+mouse = true
+
+[editor.cursor-shape]
+insert = "bar"
+normal = "block"
+select = "block"
+
+[editor.file-picker]
+hidden = true
+ignore = true
+git-ignore = true
+
+[editor.soft-wrap]
+enable = true
+
