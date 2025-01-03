@@ -1,0 +1,8 @@
+a b c
+.
+./README.md
+./flake.nix
+./main.py
+./default.nix
+./test
+./Containerfile

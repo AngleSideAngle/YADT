@@ -1,0 +1,57 @@
+# Uses nix image to build user defined packages and then install them into the
+# specified base image
+FROM nixos/nix:latest AS builder
+
+# Formatted as "nixpkgs#package1 nixpkgs#package2 etc"
+ARG PACKAGES_STRING="nixpkgs#python314 nixpkgs#helix nixpkgs#bash"
+
+# The new nix cli doesn't work without this
+RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
+
+# Builds packages to ./result, ./result-1, etc
+WORKDIR /tmp/build
+RUN nix build $PACKAGES_STRING
+
+# Store string containing all the result directories
+RUN echo $(find -P . -type l -print) > built_pkg_dirs
+
+# Put closure of all built packages in /tmp/closure
+RUN mkdir /tmp/closure
+RUN nix copy --to /tmp/closure $(cat built_pkg_dirs)
+
+# Fill profile directory with simlinks to every binary of everyone package that
+# were specified to be installed
+RUN ls /nix/store/bialkx47yxyj6ar2zyihghip6nyxcwhm-bash-5.2p37-man/share
+RUN mkdir /tmp/profile
+RUN for package in $(cat built_pkg_dirs); do \
+      bin_dir="$(readlink $package)/bin"; \
+
+      # some packages (eg. manpages) don't have bin directories
+      if [ -d "$bin_dir" ]; then \
+        for binary in $bin_dir/*; do \
+          echo "simlinking $binary"; \
+          ln -s $binary /tmp/profile/$(basename $binary); \
+        done \
+      fi \
+    done
+
+ARG SOURCE=ubuntu:latest
+
+FROM ubuntu
+
+ARG USERNAME=dev
+ARG UID=1000
+ARG GID=1000
+
+# Set up home for user that doesn't exist yet
+RUN mkdir -p /home/$USERNAME \
+    && chown $CONTAINER_UID:$CONTAINER_GID /home/$USERNAME \
+    && cp -r /etc/skel/. /home/$USERNAME
+
+
+COPY --from=builder /tmp/closure /
+COPY --from=builder /tmp/profile /profile
+# set up path so that custom installed packages have lower precedence than
+# system packages
+ENV PATH="$PATH:/profile"
+
