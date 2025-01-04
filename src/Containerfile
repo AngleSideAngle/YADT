@@ -35,9 +35,9 @@ RUN for package in $(cat built_pkg_dirs); do \
       fi \
     done
 
-ARG SOURCE=ubuntu:latest
+ARG DEV_IMAGE
 
-FROM ubuntu
+FROM $DEV_IMAGE
 
 ARG USERNAME=dev
 ARG UID=1000
