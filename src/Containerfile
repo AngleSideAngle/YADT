@@ -1,6 +1,7 @@
 # Uses nix image to build user defined packages and then install them into the
 # specified base image
 ARG NIX_IMAGE
+ARG DEV_IMAGE
 FROM $NIX_IMAGE AS builder
 
 # Formatted as "nixpkgs#package1 nixpkgs#package2 etc"
@@ -35,9 +36,9 @@ RUN for package in $(cat built_pkg_dirs); do \
       fi \
     done
 
-ARG DEV_IMAGE
+# ARG DEV_IMAGE
 
-FROM $DEV_IMAGE
+FROM $DEV_IMAGE AS working
 
 ARG USERNAME=dev
 ARG UID=1000

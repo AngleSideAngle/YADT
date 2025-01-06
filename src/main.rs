@@ -1,10 +1,11 @@
 use core::str;
 use std::{
     collections::HashSet,
-    fs,
-    io::{self, Write},
+    fs::{self, File},
+    io::{self, BufRead, BufReader, Read, Write},
     path::PathBuf,
-    process::{Command, Stdio},
+    process::{Command, Output, Stdio},
+    thread,
 };
 
 use clap::{Parser, Subcommand};
@@ -16,7 +17,7 @@ static CONTAINERFILE: &'static [u8] = include_bytes!("Containerfile");
 
 /// Used by serde to generate a default docker name
 fn default_docker_name() -> String {
-    "docker".to_string()
+    "podman".to_string()
 }
 
 /// Used by serde to generate a default nix docker image to pull
@@ -26,7 +27,7 @@ fn default_nix_image() -> String {
 
 /// Used by serde to generate default base packages to install
 fn default_base_packages() -> HashSet<String> {
-    HashSet::from_iter(vec!["bash", ""].iter().map(|s| s.to_string()))
+    HashSet::from_iter(vec!["bash"].iter().map(|s| s.to_string()))
 }
 
 /// Stores the values used to configure this application.
@@ -119,10 +120,18 @@ enum Mode {
 /// compatibility, although the chances this app works on windows are rather
 /// low.
 fn parse_config(config_override: Option<PathBuf>) -> Result<Config, io::Error> {
-    if let Some(config_path) = config_override
-        .or_else(|| ProjectDirs::from("io", "github", "yadt").map(|x| x.config_dir().to_path_buf()))
-    {
-        let config_text = fs::read_to_string(config_path)?;
+    // Returns the default config text if it exists or can be read,
+    // otherwise returns None
+    fn default_config_text() -> Option<String> {
+        let project_dirs = ProjectDirs::from("io.github", "anglesideangle", "yadt");
+        let path = project_dirs.map(|dirs| dirs.config_dir().to_path_buf());
+        path.map(|p| fs::read_to_string(p).ok()).flatten()
+    }
+
+    // bad override config should fail
+    let override_text = config_override.map(fs::read_to_string).transpose()?;
+
+    if let Some(config_text) = override_text.or_else(default_config_text) {
         toml::from_str(&config_text)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.message()))
     } else {
@@ -141,9 +150,15 @@ fn main() -> Result<(), io::Error> {
         Mode::Image { image } => image,
     };
 
+    // TODO
+    // if desired nix packages exist on the home system, copy them in to save
+    // bandwidth
+    // or just mount the entire host /nix into the nix image
+
+    // println!("workspace: {:?}", fs::canonicalize(&cli.workspace)?);
+    println!("{:?}", dev_image);
     let mut build_process = Command::new(&config.docker_name)
         .arg("build")
-        .arg(cli.workspace)
         .arg("-f")
         .arg("-")
         .arg("-t")
@@ -151,17 +166,57 @@ fn main() -> Result<(), io::Error> {
         .arg("--build-arg")
         .arg(format!("NIX_IMAGE={}", config.nix_image))
         .arg("--build-arg")
-        .arg(format!("PACKAGES_STRING={}", config.all_packages()))
-        .arg("--build-args")
         .arg(format!("DEV_IMAGE={}", dev_image))
+        .arg("--build-arg")
+        .arg(format!("PACKAGES_STRING={}", config.all_packages()))
         .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
         .spawn()?;
 
-    if let Some(stdin) = build_process.stdin.as_mut() {
-        stdin.write_all(CONTAINERFILE)?;
-    }
+    let mut stdin = build_process
+        .stdin
+        .take()
+        .expect("Could not capture build process stdin.");
 
-    build_process.wait_with_output()?;
+    let stdout = build_process
+        .stdout
+        .take()
+        .expect("Could not capture build process stdout.");
+
+    // write containerfile from this app's binary to the build process stdin
+    // this seems to need to be in a separate thread because
+    thread::spawn(move || stdin.write_all(CONTAINERFILE));
+
+    // build_process.wait_with_output()?;
+    // build_process.wait()?;
+
+    let reader = BufReader::new(stdout);
+
+    // this is a hack to forward command's progress to stdout while keeping it
+    // an iterator. ideally the side effects from this shouldn't matter
+    let container_id = reader
+        .lines()
+        .map(|line| {
+            if let Ok(l) = &line {
+                println!(">>> {}", l);
+            }
+            line
+        })
+        .last()
+        .expect("Build command did not write to stdout.")
+        .expect("Could not read last line of stdout");
+
+    println!("hash: {:?}", container_id);
+
+    // build_process.wait()?;
+
+    let run_command = Command::new(&config.docker_name)
+        .arg("run")
+        .arg("--rm")
+        .arg("--tty")
+        .arg("--interactive")
+        // .arg("userns")
+        
 
     Ok(())
 }
