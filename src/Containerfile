@@ -11,50 +11,7 @@ ARG PACKAGES_STRING
 RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
 
 # Builds packages to ./result, ./result-1, etc
-# base packages must be hard coded so that they are cached
-# list adapted from
-# https://github.com/89luca89/distrobox/blob/main/distrobox-init
-# and
-# https://github.com/devcontainers/features/blob/main/src/common-utils/main.sh
-
 WORKDIR /tmp/build
-RUN nix build \
-  nixpkgs#bash \
-  nixpkgs#bash-completion \
-  nixpkgs#bc \
-  nixpkgs#curl \
-  nixpkgs#diffutils \
-  nixpkgs#findutils \
-  nixpkgs#glibc \
-  nixpkgs#gnupg \
-  nixpkgs#iputils \
-  nixpkgs#inetutils \
-  nixpkgs#keyutils \
-  nixpkgs#less \
-  nixpkgs#lsof \
-  nixpkgs#man \
-  nixpkgs#mlocate \
-  nixpkgs#mtr \
-  nixpkgs#ncurses \
-  nixpkgs#nssmdns \
-  nixpkgs#openssh \
-  nixpkgs#pigz \
-  nixpkgs#pinentry-tty \
-  nixpkgs#procps \
-  nixpkgs#rsync \
-  nixpkgs#shadow \
-  nixpkgs#sudo \
-  nixpkgs#tcpdump \
-  nixpkgs#time \
-  nixpkgs#traceroute \
-  nixpkgs#tree \
-  nixpkgs#tzdata \
-  nixpkgs#unzip \
-  nixpkgs#util-linux \
-  nixpkgs#wget \
-  nixpkgs#zip \
-  nixpkgs#neovim
-
 RUN nix build $PACKAGES_STRING
 
 # Store string containing all the result directories

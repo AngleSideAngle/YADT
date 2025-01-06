@@ -1,8 +1,7 @@
 use core::str;
 use std::{
     collections::HashSet,
-    ffi::{OsStr, OsString},
-    fmt::{format, Pointer},
+    ffi::OsString,
     fs,
     io::{self, BufRead, BufReader, Write},
     os::unix::process::CommandExt,
@@ -13,7 +12,7 @@ use std::{
 
 use clap::{Parser, Subcommand};
 use directories_next::ProjectDirs;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 /// Containerfile used to build nix image and copy packages into dev image
 static CONTAINERFILE: &'static [u8] = include_bytes!("Containerfile");
@@ -26,6 +25,54 @@ fn default_docker_name() -> String {
 /// Used by serde to generate a default nix docker image to pull
 fn default_nix_image() -> String {
     "docker.io/nixos/nix:latest".to_string()
+}
+
+/// Used by serde to generate default base packages to install
+fn default_base_packages() -> HashSet<String> {
+    // list adapted from
+    // https://github.com/89luca89/distrobox/blob/main/distrobox-init
+    // and
+    // https://github.com/devcontainers/features/blob/main/src/common-utils/main.sh
+    HashSet::from_iter(
+        vec![
+            "bash",
+            "bash-completion",
+            "bc",
+            "curl",
+            "diffutils",
+            "findutils",
+            "glibc",
+            "gnupg",
+            "iputils",
+            "inetutils",
+            "keyutils",
+            "less",
+            "lsof",
+            "man",
+            "mlocate",
+            "mtr",
+            "ncurses",
+            "nssmdns",
+            "openssh",
+            "pigz",
+            "pinentry-tty",
+            "procps",
+            "rsync",
+            "shadow",
+            "sudo",
+            "tcpdump",
+            "time",
+            "traceroute",
+            "tree",
+            "tzdata",
+            "unzip",
+            "util-linux",
+            "wget",
+            "zip",
+        ]
+        .iter()
+        .map(|s| s.to_string()),
+    )
 }
 
 /// Stores the values used to configure this application.
@@ -44,6 +91,7 @@ struct Config {
 
     /// The base packages to install into the environment. This defaults to a
     /// vector of various nixpkgs that tend to be useful, such as git.
+    #[serde(default = "default_base_packages")]
     base_packages: HashSet<String>,
 
     /// Additional packages to install into the environment. This defaults to
@@ -143,7 +191,27 @@ fn main() -> Result<(), io::Error> {
     let config = parse_config(cli.config)?;
 
     let dev_image = match cli.mode {
-        Mode::Containerfile { containerfile } => todo!(),
+        Mode::Containerfile { containerfile } => {
+            let mut cmd = Command::new(&config.docker_name)
+                .arg("build")
+                .arg("-f")
+                .arg(
+                    fs::canonicalize(containerfile)
+                        .expect("Could not canonicalize containerfile path"),
+                )
+                .stdout(Stdio::piped())
+                .spawn()?;
+
+            BufReader::new(
+                cmd.stdout
+                    .take()
+                    .expect("Could not capture build process stdout."),
+            )
+            .lines()
+            .last()
+            .expect("Build command did not write to stdout.")
+            .expect("Could not read last line of stdout")
+        }
         Mode::Image { image } => image,
     };
 
@@ -151,11 +219,7 @@ fn main() -> Result<(), io::Error> {
     // if desired nix packages exist on the home system, copy them in to save
     // bandwidth
     // or just mount the entire host /nix into the nix image
-
-    let uid = unsafe { libc::getuid() };
-    let gid = unsafe { libc::getegid() };
-    let username = "devuser".to_string();
-    // let username = unsafe { libc::getpwuid(uid) };
+    // or get rid of the base image and just copy stuff from the host system
 
     let mut workspace_arg = OsString::from("WORKSPACE=");
     workspace_arg.push(fs::canonicalize(&cli.workspace)?);
@@ -237,7 +301,6 @@ fn main() -> Result<(), io::Error> {
         .arg("--http-proxy") // making the most of the podman dep
         .arg("--network")
         .arg("host")
-        // .arg("--env-host")
         .arg("--env-merge")
         .arg("PATH=${PATH}:/yadt-bin")
         .arg(container_id)
