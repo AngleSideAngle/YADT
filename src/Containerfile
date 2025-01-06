@@ -11,7 +11,50 @@ ARG PACKAGES_STRING
 RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
 
 # Builds packages to ./result, ./result-1, etc
+# base packages must be hard coded so that they are cached
+# list adapted from
+# https://github.com/89luca89/distrobox/blob/main/distrobox-init
+# and
+# https://github.com/devcontainers/features/blob/main/src/common-utils/main.sh
+
 WORKDIR /tmp/build
+RUN nix build \
+  nixpkgs#bash \
+  nixpkgs#bash-completion \
+  nixpkgs#bc \
+  nixpkgs#curl \
+  nixpkgs#diffutils \
+  nixpkgs#findutils \
+  nixpkgs#glibc \
+  nixpkgs#gnupg \
+  nixpkgs#iputils \
+  nixpkgs#inetutils \
+  nixpkgs#keyutils \
+  nixpkgs#less \
+  nixpkgs#lsof \
+  nixpkgs#man \
+  nixpkgs#mlocate \
+  nixpkgs#mtr \
+  nixpkgs#ncurses \
+  nixpkgs#nssmdns \
+  nixpkgs#openssh \
+  nixpkgs#pigz \
+  nixpkgs#pinentry-tty \
+  nixpkgs#procps \
+  nixpkgs#rsync \
+  nixpkgs#shadow \
+  nixpkgs#sudo \
+  nixpkgs#tcpdump \
+  nixpkgs#time \
+  nixpkgs#traceroute \
+  nixpkgs#tree \
+  nixpkgs#tzdata \
+  nixpkgs#unzip \
+  nixpkgs#util-linux \
+  nixpkgs#wget \
+  nixpkgs#zip \
+  nixpkgs#neovim
+
 RUN nix build $PACKAGES_STRING
 
 # Store string containing all the result directories
@@ -26,33 +69,30 @@ RUN nix copy --to /tmp/closure $(cat built_pkg_dirs)
 RUN mkdir /tmp/profile
 RUN for package in $(cat built_pkg_dirs); do \
       bin_dir="$(readlink $package)/bin"; \
-
       # some packages (eg. manpages) don't have bin directories
       if [ -d "$bin_dir" ]; then \
         for binary in $bin_dir/*; do \
           echo "simlinking $binary"; \
-          ln -s $binary /tmp/profile/$(basename $binary); \
+          # || true is needed because binary name collisions can occur without
+          # nix's hashing. any collisions are ignored, since the correct
+          # library is still installed
+          ln -s $binary /tmp/profile/$(basename $binary) || true; \
         done \
       fi \
     done
 
-# ARG DEV_IMAGE
+FROM $DEV_IMAGE
 
-FROM $DEV_IMAGE AS working
-
-ARG USERNAME=dev
-ARG UID=1000
-ARG GID=1000
-
-# Set up home for user that doesn't exist yet
-RUN mkdir -p /home/$USERNAME \
-    && chown $CONTAINER_UID:$CONTAINER_GID /home/$USERNAME \
-    && cp -r /etc/skel/. /home/$USERNAME
-
+# ARG USERNAME
+# ARG UID
+# ARG GID
 
 COPY --from=builder /tmp/closure /
-COPY --from=builder /tmp/profile /profile
+COPY --from=builder /tmp/profile /yadt-bin
+
 # set up path so that custom installed packages have lower precedence than
 # system packages
-ENV PATH="$PATH:/profile"
+# ENV PATH="$PATH:/yadt_bin"
+
+# ENTRYPOINT ["bin", "bash"]
 

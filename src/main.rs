@@ -1,10 +1,13 @@
 use core::str;
 use std::{
     collections::HashSet,
-    fs::{self, File},
-    io::{self, BufRead, BufReader, Read, Write},
+    ffi::{OsStr, OsString},
+    fmt::{format, Pointer},
+    fs,
+    io::{self, BufRead, BufReader, Write},
+    os::unix::process::CommandExt,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Command, Stdio},
     thread,
 };
 
@@ -25,11 +28,6 @@ fn default_nix_image() -> String {
     "docker.io/nixos/nix:latest".to_string()
 }
 
-/// Used by serde to generate default base packages to install
-fn default_base_packages() -> HashSet<String> {
-    HashSet::from_iter(vec!["bash"].iter().map(|s| s.to_string()))
-}
-
 /// Stores the values used to configure this application.
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -46,7 +44,6 @@ struct Config {
 
     /// The base packages to install into the environment. This defaults to a
     /// vector of various nixpkgs that tend to be useful, such as git.
-    #[serde(default = "default_base_packages")]
     base_packages: HashSet<String>,
 
     /// Additional packages to install into the environment. This defaults to
@@ -155,20 +152,30 @@ fn main() -> Result<(), io::Error> {
     // bandwidth
     // or just mount the entire host /nix into the nix image
 
-    // println!("workspace: {:?}", fs::canonicalize(&cli.workspace)?);
-    println!("{:?}", dev_image);
+    let uid = unsafe { libc::getuid() };
+    let gid = unsafe { libc::getegid() };
+    let username = "devuser".to_string();
+    // let username = unsafe { libc::getpwuid(uid) };
+
+    let mut workspace_arg = OsString::from("WORKSPACE=");
+    workspace_arg.push(fs::canonicalize(&cli.workspace)?);
+
     let mut build_process = Command::new(&config.docker_name)
         .arg("build")
         .arg("-f")
         .arg("-")
-        .arg("-t")
-        .arg("nix-test")
         .arg("--build-arg")
         .arg(format!("NIX_IMAGE={}", config.nix_image))
         .arg("--build-arg")
         .arg(format!("DEV_IMAGE={}", dev_image))
         .arg("--build-arg")
         .arg(format!("PACKAGES_STRING={}", config.all_packages()))
+        // .arg("--build-arg")
+        // .arg(format!("USERNAME={}", username))
+        // .arg("--build-arg")
+        // .arg(format!("UID={}", uid))
+        // .arg("--build-arg")
+        // .arg(format!("GID={}", gid))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()?;
@@ -210,13 +217,39 @@ fn main() -> Result<(), io::Error> {
 
     // build_process.wait()?;
 
-    let run_command = Command::new(&config.docker_name)
+    // let mut workspace_volume_arg = OsString::from("WORKSPACE=");
+    let mut workspace_vol_arg = fs::canonicalize(&cli.workspace)?;
+    workspace_vol_arg.push(":/workspace:rw");
+
+    Command::new(&config.docker_name)
         .arg("run")
         .arg("--rm")
         .arg("--tty")
         .arg("--interactive")
-        // .arg("userns")
-        
+        .arg("--volume")
+        .arg(workspace_vol_arg)
+        .arg("--workdir")
+        .arg("/workspace")
+        .arg("--userns")
+        .arg("keep-id") // TODO this creates a hard dependency on podman
+        .arg("--name")
+        .arg("yadt-test-run")
+        .arg("--http-proxy") // making the most of the podman dep
+        .arg("--network")
+        .arg("host")
+        // .arg("--env-host")
+        .arg("--env-merge")
+        .arg("PATH=${PATH}:/yadt-bin")
+        .arg(container_id)
+        .arg("/bin/bash")
+        .exec();
+    // .output()?;
+
+    // println!("hmm");
+
+    // .arg("--user")
+    // .arg(format!("{}:{}", uid))
+    // .arg("userns")
 
     Ok(())
 }
