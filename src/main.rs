@@ -224,6 +224,7 @@ fn main() -> Result<(), io::Error> {
     let mut workspace_arg = OsString::from("WORKSPACE=");
     workspace_arg.push(fs::canonicalize(&cli.workspace)?);
 
+    // TODO automatic caching is completely broken, needs manual impl
     let mut build_process = Command::new(&config.docker_name)
         .arg("build")
         .arg("-f")
@@ -285,6 +286,7 @@ fn main() -> Result<(), io::Error> {
     let mut workspace_vol_arg = fs::canonicalize(&cli.workspace)?;
     workspace_vol_arg.push(":/workspace:rw");
 
+    // TODO go back to old $HOME impl bc .bash_history gets added right now
     Command::new(&config.docker_name)
         .arg("run")
         .arg("--rm")
